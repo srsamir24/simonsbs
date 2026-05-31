@@ -3,6 +3,7 @@ import type { LatLng, Ore, PriceZone } from "../domain/types.js";
 import type {
   RouteResult,
   RoutingClient,
+  RoutingMatrix,
   StromPriceClient,
   TollClient,
 } from "./interfaces.js";
@@ -23,13 +24,32 @@ export class MockRoutingClient implements RoutingClient {
     private readonly avgSpeedKmh = 60,
   ) {}
 
+  private legMeters(a: LatLng, b: LatLng): number {
+    return haversineMeters(a, b) * this.detourFactor;
+  }
+
   async route(waypoints: LatLng[]): Promise<RouteResult> {
     let distance = 0;
     for (let i = 1; i < waypoints.length; i++) {
-      distance += haversineMeters(waypoints[i - 1]!, waypoints[i]!) * this.detourFactor;
+      distance += this.legMeters(waypoints[i - 1]!, waypoints[i]!);
     }
     const durationSeconds = (distance / 1000 / this.avgSpeedKmh) * 3600;
     return { distanceMeters: distance, durationSeconds, waypoints };
+  }
+
+  async table(points: LatLng[]): Promise<RoutingMatrix> {
+    const n = points.length;
+    const distanceMeters = Array.from({ length: n }, () => new Array<number>(n).fill(0));
+    const durationSeconds = Array.from({ length: n }, () => new Array<number>(n).fill(0));
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        if (i === j) continue;
+        const d = this.legMeters(points[i]!, points[j]!);
+        distanceMeters[i]![j] = d;
+        durationSeconds[i]![j] = (d / 1000 / this.avgSpeedKmh) * 3600;
+      }
+    }
+    return { distanceMeters, durationSeconds };
   }
 }
 

@@ -17,6 +17,18 @@ export interface RouteResult {
 export interface RoutingClient {
   /** Route through the given ordered waypoints. */
   route(waypoints: LatLng[]): Promise<RouteResult>;
+  /**
+   * All-pairs driving cost between `points` (origin + candidate stores). Lets the optimizer
+   * evaluate every candidate plan from ONE network call instead of routing each plan separately
+   * — essential for live OSRM, which would otherwise be hit hundreds of times per search.
+   */
+  table(points: LatLng[]): Promise<RoutingMatrix>;
+}
+
+/** Square all-pairs matrices indexed by position in the input `points` array. */
+export interface RoutingMatrix {
+  durationSeconds: Seconds[][];
+  distanceMeters: Meters[][];
 }
 
 export interface TollClient {

@@ -272,11 +272,9 @@ Baskets touch only a handful of nearby stores, so brute force is fine:
 - [x] **Wire live OSRM (routing) + hvakosterstrommen (strøm) behind the interfaces**, each with
       caching, a circuit breaker, and graceful fallback to the mock. ✅ `lib/external/live.ts`,
       `factory.ts`. Toll (bompengekalkulator) still mock pending an API key.
-- [ ] **Optimize live routing volume:** the optimizer currently calls `routing.route()` once per
-      candidate plan (hundreds of calls/search). Fine for the mock, but it would hammer/rate-limit
-      live OSRM. Replace with a single OSRM **`/table`** matrix query per search (origin + candidate
-      stores) and have the optimizer read leg costs from the matrix. **Do this before enabling live
-      routing in production.**
+- [x] **Optimize live routing volume:** the optimizer now fetches ONE OSRM **`/table`** matrix per
+      search (origin + candidate stores) and reads every plan's leg costs from it — a single
+      routing call instead of hundreds. ✅ `lib/external/{interfaces,mock,live}.ts`, `optimizer.ts`.
 - [ ] Add PostGIS schema + persistence (products, EAN, stores, prices, baskets) to replace
       the in-memory seed arrays.
 - [ ] Integrate bompengekalkulator for real tolls; add coords→price-zone lookup for geolocation.

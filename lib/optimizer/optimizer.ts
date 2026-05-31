@@ -7,7 +7,13 @@ import type {
   OptimizeRequest,
   Store,
 } from "../domain/types.js";
-import type { RoutingClient, StromPriceClient, TollClient } from "../external/interfaces.js";
+import type {
+  RouteResult,
+  RoutingClient,
+  RoutingMatrix,
+  StromPriceClient,
+  TollClient,
+} from "../external/interfaces.js";
 import { fuelCostOre } from "./fuel.js";
 import { bestRoundTripOrder } from "./tsp.js";
 
@@ -109,6 +115,15 @@ export async function optimize(
       ? (req.car.energyPriceOrePerKwh ?? (await deps.strom.priceOrePerKwh(req.originZone)))
       : undefined;
 
+  // ONE all-pairs driving matrix over [origin, ...candidateStores]. Every candidate plan reads
+  // its leg costs from this matrix, so we make a single routing call per search rather than one
+  // per plan — the difference between 1 and several hundred OSRM requests.
+  const points: LatLng[] = [req.origin, ...candidateStores.map((s) => s.location)];
+  const matrix = await deps.routing.table(points);
+  const matrixIndexById = new Map<string, number>(
+    candidateStores.map((s, i) => [s.id, i + 1]),
+  );
+
   const plans: Plan[] = [];
 
   for (const subset of subsetsUpTo(candidateStores, maxStores)) {
@@ -145,7 +160,14 @@ export async function optimize(
     const usedStoreIds = [...new Set(assignments.map((a) => a.storeId))];
     const usedStores = usedStoreIds.map((id) => subset.find((s) => s.id === id)!);
 
-    const trip = await priceTrip(req.origin, usedStores, deps, req, evPrice, timeValuePerHour);
+    const trip = await priceTrip(
+      { origin: req.origin, points, matrix, matrixIndexById },
+      usedStores,
+      deps,
+      req,
+      evPrice,
+      timeValuePerHour,
+    );
 
     plans.push({
       storeIds: usedStoreIds,
@@ -176,9 +198,21 @@ export async function optimize(
   return { plans: deduped, bestSingleStore, unfulfillable };
 }
 
-/** Route the origin -> used stores -> origin and price the driving (toll + fuel + time). */
+interface TripContext {
+  origin: LatLng;
+  /** points[0] is the origin; points[i+1] is candidateStores[i]. */
+  points: LatLng[];
+  matrix: RoutingMatrix;
+  matrixIndexById: Map<string, number>;
+}
+
+/**
+ * Order the used stores into the cheapest round trip (origin -> stores -> origin) using the
+ * precomputed matrix, then price the driving (toll + fuel + time). No network call — every leg
+ * cost is read from the matrix built once per search.
+ */
 async function priceTrip(
-  origin: LatLng,
+  ctx: TripContext,
   usedStores: Store[],
   deps: Deps,
   req: OptimizeRequest,
@@ -192,26 +226,29 @@ async function priceTrip(
   distanceMeters: number;
   durationSeconds: number;
 }> {
-  // Node 0 = origin, nodes 1.. = stores. Order them with the exact mini-TSP.
-  const nodes: LatLng[] = [origin, ...usedStores.map((s) => s.location)];
-  const storeIndices = usedStores.map((_, i) => i + 1);
-  const cost = (a: number, b: number) => haversineMeters(nodes[a]!, nodes[b]!);
-  const order = bestRoundTripOrder(storeIndices, cost);
+  const { matrix, matrixIndexById, points } = ctx;
+  // Matrix indices for the used stores (index 0 is the origin). Order with the exact mini-TSP,
+  // minimizing driving time.
+  const storeIndices = usedStores.map((s) => matrixIndexById.get(s.id)!);
+  const order = bestRoundTripOrder(storeIndices, (a, b) => matrix.durationSeconds[a]![b]!);
 
-  const visitOrder = order.map((idx) => usedStores[idx - 1]!.id);
-  const waypoints: LatLng[] = [origin, ...order.map((idx) => nodes[idx]!), origin];
+  // Closed tour: origin -> ordered stores -> origin.
+  const tour = [0, ...order, 0];
+  let distanceMeters = 0;
+  let durationSeconds = 0;
+  for (let i = 1; i < tour.length; i++) {
+    distanceMeters += matrix.distanceMeters[tour[i - 1]!]![tour[i]!]!;
+    durationSeconds += matrix.durationSeconds[tour[i - 1]!]![tour[i]!]!;
+  }
 
-  const route = await deps.routing.route(waypoints);
+  const idToStore = new Map(usedStores.map((s) => [matrixIndexById.get(s.id)!, s]));
+  const visitOrder = order.map((idx) => idToStore.get(idx)!.id);
+  const waypoints: LatLng[] = [ctx.origin, ...order.map((idx) => points[idx]!), ctx.origin];
+
+  const route: RouteResult = { distanceMeters, durationSeconds, waypoints };
   const tollOre = await deps.toll.tollForRoute(route, /* withAutoPass */ true);
-  const fuelOre = fuelCostOre(route.distanceMeters, req.car, evPrice);
-  const timeValueOre = Math.round((route.durationSeconds / 3600) * timeValuePerHour);
+  const fuelOre = fuelCostOre(distanceMeters, req.car, evPrice);
+  const timeValueOre = Math.round((durationSeconds / 3600) * timeValuePerHour);
 
-  return {
-    visitOrder,
-    tollOre,
-    fuelOre,
-    timeValueOre,
-    distanceMeters: route.distanceMeters,
-    durationSeconds: route.durationSeconds,
-  };
+  return { visitOrder, tollOre, fuelOre, timeValueOre, distanceMeters, durationSeconds };
 }

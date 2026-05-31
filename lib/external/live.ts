@@ -1,5 +1,11 @@
+import { haversineMeters } from "../domain/geo.js";
 import type { LatLng, Ore, PriceZone } from "../domain/types.js";
-import type { RouteResult, RoutingClient, StromPriceClient } from "./interfaces.js";
+import type {
+  RouteResult,
+  RoutingClient,
+  RoutingMatrix,
+  StromPriceClient,
+} from "./interfaces.js";
 
 /**
  * Live external clients backed by real public APIs, each wrapping a `fallback` client used when
@@ -128,6 +134,11 @@ interface OsrmResponse {
   code: string;
   routes?: OsrmRoute[];
 }
+interface OsrmTableResponse {
+  code: string;
+  durations?: (number | null)[][];
+  distances?: (number | null)[][];
+}
 
 export interface OsrmOptions {
   fetchImpl?: FetchLike;
@@ -143,6 +154,7 @@ export class OsrmRoutingClient implements RoutingClient {
   private readonly timeoutMs: number;
   private readonly breaker: CircuitBreaker;
   private readonly cache = new Map<string, RouteResult>();
+  private readonly tableCache = new Map<string, RoutingMatrix>();
 
   constructor(
     private readonly fallback: RoutingClient,
@@ -176,6 +188,33 @@ export class OsrmRoutingClient implements RoutingClient {
     } catch {
       this.breaker.trip();
       return this.fallback.route(waypoints);
+    }
+  }
+
+  async table(points: LatLng[]): Promise<RoutingMatrix> {
+    const key = points.map((p) => `${p.lng.toFixed(5)},${p.lat.toFixed(5)}`).join(";");
+    const cached = this.tableCache.get(key);
+    if (cached) return cached;
+    if (this.breaker.isOpen) return this.fallback.table(points);
+
+    try {
+      const url = `${this.baseUrl}/table/v1/driving/${key}?annotations=duration,distance`;
+      const data = (await fetchJson(this.fetchImpl, url, this.timeoutMs)) as OsrmTableResponse;
+      if (data.code !== "Ok" || !data.durations) throw new Error(`OSRM table ${data.code}`);
+      const n = points.length;
+      const durationSeconds = data.durations.map((row) => row.map((v) => v ?? 0));
+      // distances annotation isn't guaranteed on every OSRM build — approximate from geo if absent.
+      const distanceMeters =
+        data.distances?.map((row) => row.map((v) => v ?? 0)) ??
+        points.map((a) => points.map((b) => haversineMeters(a, b) * 1.3));
+      if (durationSeconds.length !== n) throw new Error("OSRM table shape mismatch");
+      const matrix: RoutingMatrix = { durationSeconds, distanceMeters };
+      this.breaker.reset();
+      this.tableCache.set(key, matrix);
+      return matrix;
+    } catch {
+      this.breaker.trip();
+      return this.fallback.table(points);
     }
   }
 }

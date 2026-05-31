@@ -96,4 +96,44 @@ describe("OsrmRoutingClient", () => {
     const r = await client.route(wps);
     expect(r.distanceMeters).toBeGreaterThan(0); // came from fallback, not a throw
   });
+
+  it("parses a /table matrix and caches it", async () => {
+    const tableJson = {
+      code: "Ok",
+      durations: [
+        [0, 4200, 0],
+        [4200, 0, 4200],
+        [0, 4200, 0],
+      ],
+      distances: [
+        [0, 92000, 0],
+        [92000, 0, 92000],
+        [0, 92000, 0],
+      ],
+    };
+    const fetchImpl = stubFetch(tableJson);
+    const client = new OsrmRoutingClient(new MockRoutingClient(), { fetchImpl });
+    const m = await client.table(wps);
+    expect(m.durationSeconds[0]![1]).toBe(4200);
+    expect(m.distanceMeters[1]![2]).toBe(92000);
+    await client.table(wps);
+    expect(fetchImpl).toHaveBeenCalledTimes(1); // cached
+  });
+
+  it("approximates distances from geo when OSRM omits the distance annotation", async () => {
+    const fetchImpl = stubFetch({ code: "Ok", durations: [[0, 4200, 0], [4200, 0, 4200], [0, 4200, 0]] });
+    const client = new OsrmRoutingClient(new MockRoutingClient(), { fetchImpl });
+    const m = await client.table(wps);
+    expect(m.durationSeconds[0]![1]).toBe(4200); // real duration kept
+    expect(m.distanceMeters[0]![1]).toBeGreaterThan(0); // distance approximated
+  });
+
+  it("falls back to the mock table when OSRM fails", async () => {
+    const fetchImpl = stubFetch(null, true);
+    const fallback = new MockRoutingClient();
+    const client = new OsrmRoutingClient(fallback, { fetchImpl });
+    const m = await client.table(wps);
+    const expected = await fallback.table(wps);
+    expect(m.distanceMeters[0]![1]).toBeCloseTo(expected.distanceMeters[0]![1]!, 5);
+  });
 });
