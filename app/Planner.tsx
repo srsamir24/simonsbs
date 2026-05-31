@@ -276,9 +276,9 @@ export default function Planner({
 
         {result && (
           <p className="footnote">
-            Butikkene er ekte utsalg i Oslo/Viken (reelle adresser). Prisene er håndlagde
-            demo-data. Bompenger, drivstoff og kjøretid er estimert med mock-klienter — byttes ut
-            med OSRM, bompengekalkulator og hvakosterstrommen.
+            Butikkene er ekte utsalg i Oslo/Viken (reelle adresser). Kjøreavstand/-tid hentes fra
+            OSRM og strømpris fra hvakosterstrommen når nett er tilgjengelig (ellers estimat).
+            Priser og bompenger er foreløpig demo-data.
           </p>
         )}
       </div>

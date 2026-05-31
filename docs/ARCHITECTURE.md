@@ -267,20 +267,29 @@ Baskets touch only a handful of nearby stores, so brute force is fine:
       affiliate/partnership inquiries.
 - [x] **Build the Trip Optimizer against seed data with mocked routing/toll/fuel clients +
       tests.** ✅ Done — see `lib/optimizer/`, `seed/`, `npm test`, `npm run demo`.
-- [x] **Hand-enter a Phase-1 seed catalog (greater Oslo/Drammen, zone NO1).** ✅ `seed/`.
-- [ ] Scaffold the Next.js + TS app + UI (basket builder, map, results) on top of the engine.
+- [x] **Hand-enter a Phase-1 seed catalog (real Oslo/Viken stores, zone NO1).** ✅ `seed/`.
+- [x] **Scaffold the Next.js + TS PWA UI** (basket builder, results, geolocation). ✅ `app/`.
+- [x] **Wire live OSRM (routing) + hvakosterstrommen (strøm) behind the interfaces**, each with
+      caching, a circuit breaker, and graceful fallback to the mock. ✅ `lib/external/live.ts`,
+      `factory.ts`. Toll (bompengekalkulator) still mock pending an API key.
+- [ ] **Optimize live routing volume:** the optimizer currently calls `routing.route()` once per
+      candidate plan (hundreds of calls/search). Fine for the mock, but it would hammer/rate-limit
+      live OSRM. Replace with a single OSRM **`/table`** matrix query per search (origin + candidate
+      stores) and have the optimizer read leg costs from the matrix. **Do this before enabling live
+      routing in production.**
 - [ ] Add PostGIS schema + persistence (products, EAN, stores, prices, baskets) to replace
       the in-memory seed arrays.
-- [ ] Wire real OSRM + bompengekalkulator + hvakosterstrommen behind the cached clients
-      (drop-in replacements for `lib/external/mock.ts` implementing `lib/external/interfaces.ts`).
+- [ ] Integrate bompengekalkulator for real tolls; add coords→price-zone lookup for geolocation.
 
 ## 10. What's built so far (Phase 1 engine)
 
 ```
 lib/domain/      types, money (øre-based), geo (haversine)
-lib/external/    interfaces (Routing/Toll/Strøm) + deterministic mocks
+lib/external/    interfaces (Routing/Toll/Strøm), deterministic mocks, live clients
+                 (OSRM + hvakosterstrommen w/ caching, breaker, fallback), factory
 lib/optimizer/   fuel & strøm cost model, exact mini-TSP, the optimizer, tests
-seed/            real Oslo/Drammen stores + sample catalogue + hand-entered prices
+seed/            real Oslo/Viken stores + sample catalogue + generated demo prices
+app/             Next.js PWA: spec-sheet UI, /api/optimize route, geolocation
 scripts/demo.ts  end-to-end "cheapest total trip" demo  (npm run demo)
 ```
 

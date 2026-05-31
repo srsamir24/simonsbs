@@ -1,20 +1,12 @@
 import { NextResponse } from "next/server";
 import type { CarProfile, LatLng, OptimizeRequest, PriceZone } from "@/lib/domain/types";
 import { kr } from "@/lib/domain/money";
-import {
-  MockRoutingClient,
-  MockStromPriceClient,
-  MockTollClient,
-} from "@/lib/external/mock";
+import { getExternalClients } from "@/lib/external/factory";
 import { optimize } from "@/lib/optimizer/optimizer";
 import { SEED_OFFERS } from "@/seed/offers";
 import { SEED_STORES } from "@/seed/stores";
 
-const deps = {
-  routing: new MockRoutingClient(),
-  toll: new MockTollClient(),
-  strom: new MockStromPriceClient(),
-};
+const deps = getExternalClients();
 
 interface RequestBody {
   origin: LatLng;
