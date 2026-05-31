@@ -16,9 +16,22 @@ basket across a couple of stores that are near each other.
 
 ## Status
 
-📐 **Planning phase.** No application code yet. This repo currently contains the product &
-technical plan. See **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** for the full design,
-the phased roadmap, and the (significant) open risks around price-data acquisition.
+🛠️ **Phase 1 in progress — the Trip Optimizer engine is built and tested.**
+
+The novel core (pricing a whole basket as a *total trip* across one or more stores) runs
+end-to-end on seed data with mock external clients. Try it:
+
+```bash
+npm install
+npm test     # 10 passing tests
+npm run demo # cheapest-total-trip walkthrough on seed data
+```
+
+The demo finds that splitting a basket across 3 Oslo/Drammen-area stores saves money **even
+after** paying the extra tolls, fuel, and driving time — the feature that justifies the whole
+product. Still to come: real price data (Phase 0/2), live OSRM/toll/strøm clients, and the
+Next.js PWA UI. See **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** for the full design and
+the (significant) open risks around price-data acquisition.
 
 ## The core idea in one picture
 

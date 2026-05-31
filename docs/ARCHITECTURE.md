@@ -265,7 +265,29 @@ Baskets touch only a handful of nearby stores, so brute force is fine:
 - [ ] Owner answers §8 Q1–Q4 (region, audience, data ambition, scraping appetite).
 - [ ] Phase 0 spike: inspect 2 chains' product pages for JSON-LD / hidden JSON APIs; send
       affiliate/partnership inquiries.
-- [ ] Scaffold the Next.js + TS app and PostGIS schema (products, EAN, stores, prices, baskets).
-- [ ] Build the Trip Optimizer against seed data with mocked routing/toll/fuel clients + tests.
-- [ ] Wire real OSRM + bompengekalkulator + hvakosterstrommen behind the cached clients.
-- [ ] Hand-enter the Phase-1 seed catalog for the chosen region; ship an internal demo.
+- [x] **Build the Trip Optimizer against seed data with mocked routing/toll/fuel clients +
+      tests.** ✅ Done — see `lib/optimizer/`, `seed/`, `npm test`, `npm run demo`.
+- [x] **Hand-enter a Phase-1 seed catalog (greater Oslo/Drammen, zone NO1).** ✅ `seed/`.
+- [ ] Scaffold the Next.js + TS app + UI (basket builder, map, results) on top of the engine.
+- [ ] Add PostGIS schema + persistence (products, EAN, stores, prices, baskets) to replace
+      the in-memory seed arrays.
+- [ ] Wire real OSRM + bompengekalkulator + hvakosterstrommen behind the cached clients
+      (drop-in replacements for `lib/external/mock.ts` implementing `lib/external/interfaces.ts`).
+
+## 10. What's built so far (Phase 1 engine)
+
+```
+lib/domain/      types, money (øre-based), geo (haversine)
+lib/external/    interfaces (Routing/Toll/Strøm) + deterministic mocks
+lib/optimizer/   fuel & strøm cost model, exact mini-TSP, the optimizer, tests
+seed/            real Oslo/Drammen stores + sample catalogue + hand-entered prices
+scripts/demo.ts  end-to-end "cheapest total trip" demo  (npm run demo)
+```
+
+Design choices worth knowing:
+- **Money is integer øre** everywhere to avoid float drift when summing baskets/tolls/fuel.
+- **External services are interfaces**, so the optimizer is pure and unit-tested with mocks;
+  swapping in live OSRM/toll/strøm requires no optimizer changes.
+- **Optimizer strategy** = enumerate store subsets up to `maxStores` (default 3), assign each
+  line to its cheapest store in the subset, solve an exact mini-TSP for the visit order, then
+  price materials + toll + fuel + (optional) time value. Plans ranked by total cost.
