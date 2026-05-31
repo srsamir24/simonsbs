@@ -14,6 +14,7 @@ export default function Page() {
     name: s.name,
     chain: s.chain,
     address: s.address ?? "",
+    location: s.location,
   }));
 
   return (

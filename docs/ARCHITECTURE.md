@@ -287,7 +287,8 @@ lib/external/    interfaces (Routing/Toll/Strøm), deterministic mocks, live cli
                  (OSRM + hvakosterstrommen w/ caching, breaker, fallback), factory
 lib/optimizer/   fuel & strøm cost model, exact mini-TSP, the optimizer, tests
 seed/            real Oslo/Viken stores + sample catalogue + generated demo prices
-app/             Next.js PWA: spec-sheet UI, /api/optimize route, geolocation
+app/             Next.js PWA: spec-sheet UI, /api/optimize route, geolocation,
+                 MapLibre route map (RouteMap.tsx, lazy-loaded, OSM tiles)
 scripts/demo.ts  end-to-end "cheapest total trip" demo  (npm run demo)
 ```
 

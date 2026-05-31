@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { formatKr, toKr } from "@/lib/domain/money";
 import type { FuelType, LatLng, PriceZone } from "@/lib/domain/types";
+import RouteMap, { type MapStop } from "./RouteMap";
 
 interface ProductDTO {
   id: string;
@@ -15,6 +16,7 @@ interface StoreDTO {
   name: string;
   chain: string;
   address: string;
+  location: LatLng;
 }
 interface Assignment {
   productId: string;
@@ -82,6 +84,7 @@ export default function Planner({
   const [timeValue, setTimeValue] = useState(150);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
+  const [selected, setSelected] = useState(0);
 
   const setQ = (id: string, v: number) => setQty({ ...qty, [id]: Math.max(0, v) });
   const basketCount = Object.values(qty).filter((q) => q > 0).length;
@@ -125,8 +128,19 @@ export default function Planner({
       }),
     });
     setResult((await res.json()) as Result);
+    setSelected(0);
     setLoading(false);
   }
+
+  // Stops for the map = the currently selected plan's stores, in visit order, with coordinates.
+  const mapStops: MapStop[] = useMemo(() => {
+    const plan = result?.plans[selected];
+    if (!plan) return [];
+    return plan.visitOrder
+      .map((id) => storeMap.get(id))
+      .filter((s): s is StoreDTO => !!s)
+      .map((s) => ({ id: s.id, name: s.name, location: s.location }));
+  }, [result, selected, storeMap]);
 
   return (
     <div className="layout">
@@ -237,6 +251,17 @@ export default function Planner({
           </span>
         </div>
 
+        {result && result.plans.length > 0 && (
+          <div className="map-panel">
+            <RouteMap origin={origin.loc} stops={mapStops} />
+            <div className="map-cap">
+              Viser rute for{" "}
+              <b>{selected === 0 ? "billigste tur" : `alternativ ${selected + 1}`}</b> — trykk på
+              et forslag under for å se det på kartet.
+            </div>
+          </div>
+        )}
+
         {!result && (
           <div className="placeholder">
             <span className="big">⊹</span>
@@ -259,6 +284,8 @@ export default function Planner({
             plan={plan}
             rank={i}
             best={i === 0}
+            active={selected === i}
+            onSelect={() => setSelected(i)}
             single={result.bestSingleStore}
             storeMap={storeMap}
             productMap={productMap}
@@ -290,6 +317,8 @@ function PlanCard({
   plan,
   rank,
   best,
+  active,
+  onSelect,
   single,
   storeMap,
   productMap,
@@ -297,6 +326,8 @@ function PlanCard({
   plan: Plan;
   rank: number;
   best: boolean;
+  active: boolean;
+  onSelect: () => void;
   single: Plan | null;
   storeMap: Map<string, StoreDTO>;
   productMap: Map<string, ProductDTO>;
@@ -314,8 +345,9 @@ function PlanCard({
 
   return (
     <article
-      className={`order${best ? " best" : ""}`}
+      className={`order${best ? " best" : ""}${active ? " active" : ""}`}
       style={{ animationDelay: `${rank * 70}ms` }}
+      onClick={onSelect}
     >
       <div className="order-top">
         <div className="order-tag">
