@@ -15,7 +15,6 @@ interface StoreDTO {
   name: string;
   chain: string;
 }
-
 interface Assignment {
   productId: string;
   qty: number;
@@ -41,19 +40,21 @@ interface Result {
   unfulfillable: { productId: string; qty: number }[];
 }
 
-// A few origin presets in the greater Oslo/Drammen area (zone NO1).
 const ORIGINS: { label: string; loc: LatLng; zone: PriceZone }[] = [
-  { label: "Drammen sentrum", loc: { lat: 59.744, lng: 10.204 }, zone: "NO1" },
+  { label: "Drammen", loc: { lat: 59.744, lng: 10.204 }, zone: "NO1" },
   { label: "Asker", loc: { lat: 59.834, lng: 10.435 }, zone: "NO1" },
   { label: "Oslo vest", loc: { lat: 59.927, lng: 10.69 }, zone: "NO1" },
   { label: "Ski", loc: { lat: 59.72, lng: 10.835 }, zone: "NO1" },
 ];
 
 const CARS: { label: string; fuelType: FuelType; consumption: number }[] = [
-  { label: "Bensin (0,7 l/mil)", fuelType: "petrol", consumption: 7 },
-  { label: "Diesel (0,6 l/mil)", fuelType: "diesel", consumption: 6 },
-  { label: "Elbil (1,8 kWh/mil)", fuelType: "ev", consumption: 18 },
+  { label: "Bensin", fuelType: "petrol", consumption: 7 },
+  { label: "Diesel", fuelType: "diesel", consumption: 6 },
+  { label: "Elbil", fuelType: "ev", consumption: 18 },
 ];
+
+const fmtKm = (m: number) => `${(m / 1000).toFixed(1)} km`;
+const fmtMin = (s: number) => `${Math.round(s / 60)} min`;
 
 export default function Planner({
   products,
@@ -66,10 +67,7 @@ export default function Planner({
     const m = new Map(stores.map((s) => [s.id, s.name]));
     return (id: string) => m.get(id) ?? id;
   }, [stores]);
-  const productName = useMemo(() => {
-    const m = new Map(products.map((p) => [p.id, p]));
-    return (id: string) => m.get(id);
-  }, [products]);
+  const productMap = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
 
   const [qty, setQty] = useState<Record<string, number>>(() => ({
     "lumber-48x98-impr": 100,
@@ -82,174 +80,289 @@ export default function Planner({
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
 
+  const setQ = (id: string, v: number) => setQty({ ...qty, [id]: Math.max(0, v) });
   const basketCount = Object.values(qty).filter((q) => q > 0).length;
 
   async function run() {
     setLoading(true);
     const origin = ORIGINS[originIdx]!;
     const car = CARS[carIdx]!;
-    const body = {
-      origin: origin.loc,
-      originZone: origin.zone,
-      basket: Object.entries(qty).map(([productId, q]) => ({ productId, qty: q })),
-      car: {
-        fuelType: car.fuelType,
-        consumptionPer100km: car.consumption,
-        fuelPriceOrePerLitre: car.fuelType === "ev" ? undefined : 2150, // 21,50 kr/l
-      },
-      timeValueKrPerHour: timeValue,
-    };
     const res = await fetch("/api/optimize", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        origin: origin.loc,
+        originZone: origin.zone,
+        basket: Object.entries(qty).map(([productId, q]) => ({ productId, qty: q })),
+        car: {
+          fuelType: car.fuelType,
+          consumptionPer100km: car.consumption,
+          fuelPriceOrePerLitre: car.fuelType === "ev" ? undefined : 2150,
+        },
+        timeValueKrPerHour: timeValue,
+      }),
     });
     setResult((await res.json()) as Result);
     setLoading(false);
   }
 
   return (
-    <div className="grid">
-      {/* ---- Controls ---- */}
-      <div>
-        <div className="card">
-          <h2>Handleliste</h2>
-          {products.map((p) => (
-            <div className="row" key={p.id}>
-              <div>
-                <div className="label">{p.name}</div>
-                <div className="sub">
-                  {p.category} · pris per {p.unit}
+    <div className="layout">
+      {/* ============ CONTROLS ============ */}
+      <div className="sticky">
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Ordreseddel</h2>
+            <span className="idx">01 / VARER</span>
+          </div>
+          <div className="panel-body">
+            {products.map((p) => (
+              <div className="line" key={p.id}>
+                <div>
+                  <div className="name">{p.name}</div>
+                  <div className="meta">
+                    {p.category} · pr. {p.unit}
+                  </div>
+                </div>
+                <div className="stepper">
+                  <button onClick={() => setQ(p.id, (qty[p.id] ?? 0) - 1)} aria-label="minus">
+                    –
+                  </button>
+                  <input
+                    type="number"
+                    min={0}
+                    value={qty[p.id] ?? 0}
+                    onChange={(e) => setQ(p.id, Number(e.target.value))}
+                  />
+                  <button onClick={() => setQ(p.id, (qty[p.id] ?? 0) + 1)} aria-label="pluss">
+                    +
+                  </button>
                 </div>
               </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Din situasjon</h2>
+            <span className="idx">02 / TUR</span>
+          </div>
+          <div className="panel-body">
+            <div className="field">
+              <label>Utgangspunkt</label>
+              <div className="segmented cols-4">
+                {ORIGINS.map((o, i) => (
+                  <button
+                    key={o.label}
+                    aria-pressed={originIdx === i}
+                    onClick={() => setOriginIdx(i)}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="field">
+              <label>Bil</label>
+              <div className="segmented cols-3">
+                {CARS.map((c, i) => (
+                  <button key={c.label} aria-pressed={carIdx === i} onClick={() => setCarIdx(i)}>
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="field">
+              <div className="slider-row">
+                <label style={{ margin: 0 }}>Verdi på tiden din</label>
+                <span className="val">{timeValue} kr/t</span>
+              </div>
               <input
-                type="number"
+                type="range"
                 min={0}
-                value={qty[p.id] ?? 0}
-                onChange={(e) =>
-                  setQty({ ...qty, [p.id]: Math.max(0, Number(e.target.value)) })
-                }
+                max={500}
+                step={25}
+                value={timeValue}
+                onChange={(e) => setTimeValue(Number(e.target.value))}
               />
             </div>
-          ))}
-        </div>
-
-        <div className="card" style={{ marginTop: 16 }}>
-          <h2>Din situasjon</h2>
-          <div className="field">
-            <label>Utgangspunkt (hjem)</label>
-            <select value={originIdx} onChange={(e) => setOriginIdx(Number(e.target.value))}>
-              {ORIGINS.map((o, i) => (
-                <option key={o.label} value={i}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+            <button className="cta" onClick={run} disabled={loading || basketCount === 0}>
+              {loading ? "Regner ut …" : `Finn billigste tur →`}
+            </button>
           </div>
-          <div className="field">
-            <label>Bil</label>
-            <select value={carIdx} onChange={(e) => setCarIdx(Number(e.target.value))}>
-              {CARS.map((c, i) => (
-                <option key={c.label} value={i}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label>Verdi på tiden din: {timeValue} kr/time</label>
-            <input
-              type="range"
-              min={0}
-              max={500}
-              step={25}
-              value={timeValue}
-              style={{ width: "100%" }}
-              onChange={(e) => setTimeValue(Number(e.target.value))}
-            />
-          </div>
-          <button className="go" onClick={run} disabled={loading || basketCount === 0}>
-            {loading ? "Regner ut …" : `Finn billigste tur (${basketCount} varer)`}
-          </button>
-        </div>
+        </section>
       </div>
 
-      {/* ---- Results ---- */}
+      {/* ============ RESULTS ============ */}
       <div>
+        <div className="results-head">
+          <h2>Forslag</h2>
+          <span className="count">
+            {result ? `${result.plans.length} ruter vurdert` : "venter på handleliste"}
+          </span>
+        </div>
+
         {!result && (
-          <div className="empty">
-            Velg varer og trykk <b>Finn billigste tur</b>.
+          <div className="placeholder">
+            <span className="big">⊹</span>
+            Sett opp ordreseddelen og trykk «Finn billigste tur».
+            <br />
+            Vi sammenligner alle butikk-kombinasjoner i nærheten.
           </div>
         )}
 
         {result && result.plans.length === 0 && (
-          <div className="empty">Fant ingen butikker som dekker handlelista i nærheten.</div>
+          <div className="placeholder">
+            <span className="big">∅</span>
+            Ingen butikker i nærheten dekker hele handlelista.
+          </div>
         )}
 
-        {result?.plans.map((plan, i) => {
-          const isBest = i === 0;
-          const saving =
-            result.bestSingleStore && isBest
-              ? result.bestSingleStore.totalOre - plan.totalOre
-              : 0;
-          return (
-            <div className={`plan${isBest ? " best" : ""}`} key={i}>
-              <div className="planhead">
-                <span className="tag">
-                  {isBest
-                    ? "🏆 Billigste totalt"
-                    : `Alternativ ${i + 1} · ${plan.storeIds.length} butikk(er)`}
-                </span>
-                <span className="total">{formatKr(plan.totalOre)}</span>
-              </div>
-              <div className="route">
-                Rute: <b>{plan.visitOrder.map(storeName).join("  →  ")}</b>
-              </div>
-              {plan.assignments.map((a) => {
-                const p = productName(a.productId);
-                return (
-                  <div className="assign" key={a.productId}>
-                    <span>
-                      {a.qty} × {p?.name ?? a.productId} ·{" "}
-                      <span className="store">{storeName(a.storeId)}</span>
-                    </span>
-                    <span>{formatKr(a.lineTotalOre)}</span>
-                  </div>
-                );
-              })}
-              <div className="breakdown">
-                <span>
-                  Varer <b>{formatKr(plan.materialsOre)}</b>
-                </span>
-                <span>
-                  Bompenger <b>{formatKr(plan.tollOre)}</b>
-                </span>
-                <span>
-                  Drivstoff <b>{formatKr(plan.fuelOre)}</b> ·{" "}
-                  {(plan.distanceMeters / 1000).toFixed(1)} km
-                </span>
-                <span>
-                  Tid <b>{formatKr(plan.timeValueOre)}</b> ·{" "}
-                  {(plan.durationSeconds / 60).toFixed(0)} min
-                </span>
-              </div>
-              {saving > 0 && (
-                <div className="save">
-                  💰 Sparer {formatKr(saving)} vs. å handle alt i den billigste enkeltbutikken (
-                  {((toKr(saving) / toKr(result!.bestSingleStore!.totalOre)) * 100).toFixed(1)} %)
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {result?.plans.map((plan, i) => (
+          <PlanCard
+            key={i}
+            plan={plan}
+            rank={i}
+            best={i === 0}
+            single={result.bestSingleStore}
+            storeName={storeName}
+            productMap={productMap}
+          />
+        ))}
 
         {result && result.unfulfillable.length > 0 && (
           <div className="warn">
-            ⚠️ Ingen butikk i nærheten har:{" "}
-            {result.unfulfillable.map((l) => productName(l.productId)?.name ?? l.productId).join(", ")}
+            <b>⚠ Ikke tilgjengelig i nærheten:</b>{" "}
+            {result.unfulfillable
+              .map((l) => productMap.get(l.productId)?.name ?? l.productId)
+              .join(", ")}
           </div>
+        )}
+
+        {result && (
+          <p className="footnote">
+            Priser er håndlagte demo-data for Oslo/Drammen. Bompenger, drivstoff og kjøretid er
+            estimert med mock-klienter — byttes ut med OSRM, bompengekalkulator og
+            hvakosterstrommen.
+          </p>
         )}
       </div>
     </div>
+  );
+}
+
+function PlanCard({
+  plan,
+  rank,
+  best,
+  single,
+  storeName,
+  productMap,
+}: {
+  plan: Plan;
+  rank: number;
+  best: boolean;
+  single: Plan | null;
+  storeName: (id: string) => string;
+  productMap: Map<string, ProductDTO>;
+}) {
+  // Group assignments by store, following visit order.
+  const byStore = plan.visitOrder.map((sid) => ({
+    storeId: sid,
+    items: plan.assignments.filter((a) => a.storeId === sid),
+  }));
+
+  const t = plan.totalOre;
+  const pct = (v: number) => `${Math.max(0, (v / t) * 100)}%`;
+  const saving = best && single ? single.totalOre - plan.totalOre : 0;
+
+  return (
+    <article
+      className={`order${best ? " best" : ""}`}
+      style={{ animationDelay: `${rank * 70}ms` }}
+    >
+      <div className="order-top">
+        <div className="order-tag">
+          {best ? "★ Billigste totalt" : `Alternativ ${rank + 1}`}
+          <span className="stops">
+            {plan.storeIds.length} butikk{plan.storeIds.length > 1 ? "er" : ""} ·{" "}
+            {fmtKm(plan.distanceMeters)} · {fmtMin(plan.durationSeconds)}
+          </span>
+        </div>
+        <div className="order-total">
+          <div className="num">{formatKr(plan.totalOre).replace(" kr", "")}</div>
+          <div className="unit">KR TOTALT</div>
+        </div>
+      </div>
+
+      {/* itinerary */}
+      <div className="itin">
+        <span className="node home">
+          <span className="pip" /> Hjem
+        </span>
+        {plan.visitOrder.map((sid) => (
+          <span key={sid} style={{ display: "contents" }}>
+            <span className="arrow">→</span>
+            <span className="node">
+              <span className="pip" /> {storeName(sid)}
+            </span>
+          </span>
+        ))}
+        <span className="arrow">→</span>
+        <span className="node home">
+          <span className="pip" /> Hjem
+        </span>
+      </div>
+
+      {/* stops */}
+      {byStore.map(({ storeId, items }) => (
+        <div className="stop" key={storeId}>
+          <div className="stop-name">{storeName(storeId)}</div>
+          {items.map((a) => (
+            <div className="item" key={a.productId}>
+              <span>
+                <span className="q">{a.qty}×</span> {productMap.get(a.productId)?.name ?? a.productId}
+              </span>
+              <span className="price">{formatKr(a.lineTotalOre)}</span>
+            </div>
+          ))}
+        </div>
+      ))}
+
+      {/* breakdown */}
+      <div className="breakdown">
+        <div className="bar">
+          <span className="seg-mat" style={{ width: pct(plan.materialsOre) }} />
+          <span className="seg-toll" style={{ width: pct(plan.tollOre) }} />
+          <span className="seg-fuel" style={{ width: pct(plan.fuelOre) }} />
+          <span className="seg-time" style={{ width: pct(plan.timeValueOre) }} />
+        </div>
+        <div className="legend">
+          <span className="lg">
+            <span className="sw seg-mat" /> Varer <b>{formatKr(plan.materialsOre)}</b>
+          </span>
+          <span className="lg">
+            <span className="sw seg-toll" /> Bom <b>{formatKr(plan.tollOre)}</b>
+          </span>
+          <span className="lg">
+            <span className="sw seg-fuel" /> Drivstoff <b>{formatKr(plan.fuelOre)}</b>
+          </span>
+          <span className="lg">
+            <span className="sw seg-time" /> Tid <b>{formatKr(plan.timeValueOre)}</b>
+          </span>
+        </div>
+      </div>
+
+      {saving > 0 && (
+        <div className="savings">
+          <span className="stamp">Spart {Math.round(toKr(saving))} kr</span>
+          <span className="txt">
+            Denne ruta er <b>{formatKr(saving)}</b> billigere enn å handle alt i den billigste
+            enkeltbutikken — etter bom, drivstoff og tid.
+          </span>
+        </div>
+      )}
+    </article>
   );
 }
