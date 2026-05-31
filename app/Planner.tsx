@@ -14,6 +14,7 @@ interface StoreDTO {
   id: string;
   name: string;
   chain: string;
+  address: string;
 }
 interface Assignment {
   productId: string;
@@ -43,9 +44,11 @@ interface Result {
 const ORIGINS: { label: string; loc: LatLng; zone: PriceZone }[] = [
   { label: "Drammen", loc: { lat: 59.744, lng: 10.204 }, zone: "NO1" },
   { label: "Asker", loc: { lat: 59.834, lng: 10.435 }, zone: "NO1" },
-  { label: "Oslo vest", loc: { lat: 59.927, lng: 10.69 }, zone: "NO1" },
-  { label: "Ski", loc: { lat: 59.72, lng: 10.835 }, zone: "NO1" },
+  { label: "Oslo S", loc: { lat: 59.911, lng: 10.75 }, zone: "NO1" },
+  { label: "Lillestrøm", loc: { lat: 59.957, lng: 11.05 }, zone: "NO1" },
 ];
+
+const MAX_PLANS_SHOWN = 6;
 
 const CARS: { label: string; fuelType: FuelType; consumption: number }[] = [
   { label: "Bensin", fuelType: "petrol", consumption: 7 },
@@ -63,10 +66,7 @@ export default function Planner({
   products: ProductDTO[];
   stores: StoreDTO[];
 }) {
-  const storeName = useMemo(() => {
-    const m = new Map(stores.map((s) => [s.id, s.name]));
-    return (id: string) => m.get(id) ?? id;
-  }, [stores]);
+  const storeMap = useMemo(() => new Map(stores.map((s) => [s.id, s])), [stores]);
   const productMap = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
 
   const [qty, setQty] = useState<Record<string, number>>(() => ({
@@ -74,7 +74,10 @@ export default function Planner({
     "gips-13mm-standard": 10,
     "sement-25kg": 4,
   }));
-  const [originIdx, setOriginIdx] = useState(0);
+  const [origin, setOrigin] = useState<{ label: string; loc: LatLng; zone: PriceZone }>(
+    ORIGINS[0]!,
+  );
+  const [geoState, setGeoState] = useState<"idle" | "locating" | "denied">("idle");
   const [carIdx, setCarIdx] = useState(0);
   const [timeValue, setTimeValue] = useState(150);
   const [loading, setLoading] = useState(false);
@@ -83,9 +86,28 @@ export default function Planner({
   const setQ = (id: string, v: number) => setQty({ ...qty, [id]: Math.max(0, v) });
   const basketCount = Object.values(qty).filter((q) => q > 0).length;
 
+  function useMyLocation() {
+    if (!navigator.geolocation) {
+      setGeoState("denied");
+      return;
+    }
+    setGeoState("locating");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setOrigin({
+          label: "Min posisjon",
+          loc: { lat: pos.coords.latitude, lng: pos.coords.longitude },
+          zone: "NO1", // eastern Norway; resolve from coords when zone lookup is wired in
+        });
+        setGeoState("idle");
+      },
+      () => setGeoState("denied"),
+      { enableHighAccuracy: true, timeout: 8000 },
+    );
+  }
+
   async function run() {
     setLoading(true);
-    const origin = ORIGINS[originIdx]!;
     const car = CARS[carIdx]!;
     const res = await fetch("/api/optimize", {
       method: "POST",
@@ -150,18 +172,28 @@ export default function Planner({
           </div>
           <div className="panel-body">
             <div className="field">
-              <label>Utgangspunkt</label>
+              <label>Utgangspunkt — {origin.label}</label>
               <div className="segmented cols-4">
-                {ORIGINS.map((o, i) => (
+                {ORIGINS.map((o) => (
                   <button
                     key={o.label}
-                    aria-pressed={originIdx === i}
-                    onClick={() => setOriginIdx(i)}
+                    aria-pressed={origin.label === o.label}
+                    onClick={() => setOrigin(o)}
                   >
                     {o.label}
                   </button>
                 ))}
               </div>
+              <button className="geo" onClick={useMyLocation} disabled={geoState === "locating"}>
+                {geoState === "locating"
+                  ? "Finner posisjon …"
+                  : origin.label === "Min posisjon"
+                    ? "✓ Bruker din posisjon"
+                    : "📍 Bruk min posisjon"}
+              </button>
+              {geoState === "denied" && (
+                <div className="geo-hint">Fikk ikke posisjon — velg en by over.</div>
+              )}
             </div>
             <div className="field">
               <label>Bil</label>
@@ -199,7 +231,9 @@ export default function Planner({
         <div className="results-head">
           <h2>Forslag</h2>
           <span className="count">
-            {result ? `${result.plans.length} ruter vurdert` : "venter på handleliste"}
+            {result
+              ? `viser ${Math.min(result.plans.length, MAX_PLANS_SHOWN)} av ${result.plans.length} ruter`
+              : "venter på handleliste"}
           </span>
         </div>
 
@@ -219,14 +253,14 @@ export default function Planner({
           </div>
         )}
 
-        {result?.plans.map((plan, i) => (
+        {result?.plans.slice(0, MAX_PLANS_SHOWN).map((plan, i) => (
           <PlanCard
             key={i}
             plan={plan}
             rank={i}
             best={i === 0}
             single={result.bestSingleStore}
-            storeName={storeName}
+            storeMap={storeMap}
             productMap={productMap}
           />
         ))}
@@ -242,9 +276,9 @@ export default function Planner({
 
         {result && (
           <p className="footnote">
-            Priser er håndlagte demo-data for Oslo/Drammen. Bompenger, drivstoff og kjøretid er
-            estimert med mock-klienter — byttes ut med OSRM, bompengekalkulator og
-            hvakosterstrommen.
+            Butikkene er ekte utsalg i Oslo/Viken (reelle adresser). Prisene er håndlagde
+            demo-data. Bompenger, drivstoff og kjøretid er estimert med mock-klienter — byttes ut
+            med OSRM, bompengekalkulator og hvakosterstrommen.
           </p>
         )}
       </div>
@@ -257,16 +291,17 @@ function PlanCard({
   rank,
   best,
   single,
-  storeName,
+  storeMap,
   productMap,
 }: {
   plan: Plan;
   rank: number;
   best: boolean;
   single: Plan | null;
-  storeName: (id: string) => string;
+  storeMap: Map<string, StoreDTO>;
   productMap: Map<string, ProductDTO>;
 }) {
+  const storeName = (id: string) => storeMap.get(id)?.name ?? id;
   // Group assignments by store, following visit order.
   const byStore = plan.visitOrder.map((sid) => ({
     storeId: sid,
@@ -318,7 +353,12 @@ function PlanCard({
       {/* stops */}
       {byStore.map(({ storeId, items }) => (
         <div className="stop" key={storeId}>
-          <div className="stop-name">{storeName(storeId)}</div>
+          <div className="stop-name">
+            {storeName(storeId)}
+            {storeMap.get(storeId)?.address && (
+              <span className="stop-addr"> · {storeMap.get(storeId)!.address}</span>
+            )}
+          </div>
           {items.map((a) => (
             <div className="item" key={a.productId}>
               <span>

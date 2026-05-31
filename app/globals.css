@@ -352,6 +352,41 @@ input[type="range"]::-moz-range-thumb {
   cursor: pointer;
 }
 
+/* geolocation button */
+.geo {
+  width: 100%;
+  margin-top: 8px;
+  background: var(--card);
+  color: var(--ink);
+  border: 1.5px solid var(--rule-strong);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  padding: 9px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.geo:hover:not(:disabled) {
+  background: var(--paper-2);
+}
+.geo:disabled {
+  color: var(--muted);
+  cursor: progress;
+}
+.geo-hint {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--amber);
+}
+
+.stop-addr {
+  color: var(--faint);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
 /* ---------- CTA ---------- */
 .cta {
   width: 100%;

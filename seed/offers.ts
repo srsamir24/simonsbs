@@ -1,46 +1,83 @@
 import { kr } from "../lib/domain/money.js";
 import type { Offer } from "../lib/domain/types.js";
+import { SEED_PRODUCTS } from "./products.js";
+import { SEED_STORES } from "./stores.js";
 
 /**
- * HAND-ENTERED PLACEHOLDER PRICES (incl. mva) for Phase 1 demo — NOT scraped, not authoritative.
- * The whole point of the optimizer is to compare these, so prices deliberately vary by store and
- * no single store is cheapest for everything (that's what makes basket-splitting interesting).
+ * HAND-GENERATED PLACEHOLDER PRICES (incl. mva) for Phase 1 demo — NOT scraped, not
+ * authoritative. Built deterministically so the comparison is interesting:
+ *   price = base(product) × storeFactor × wobble(store, product)
+ * The discount chains (Byggmax/Bauhaus) are cheaper on average but often farther away, so the
+ * optimizer has a real price-vs-travel trade-off to solve. No single store wins everything.
  */
 const OBSERVED = new Date("2026-05-31T09:00:00Z");
 
-function offer(storeId: string, productId: string, kroner: number): Offer {
-  return { storeId, productId, priceOre: kr(kroner), inclMva: true, observedAt: OBSERVED };
+/** Base price per unit (kr, incl mva) keyed by product id. */
+const BASE_KR: Record<string, number> = {
+  "lumber-48x98-impr": 40,
+  "gips-13mm-standard": 125,
+  "isolasjon-glava-150": 900,
+  "sement-25kg": 105,
+  "osb-12mm": 175,
+};
+
+/** Relative price level per store (full-service chains pricier, discounters cheaper). */
+const STORE_FACTOR: Record<string, number> = {
+  "maxbo-vaekero": 1.05,
+  "maxbo-baerums-verk": 1.06,
+  "maxbo-asker": 1.03,
+  "maxbo-lier": 1.01,
+  "monter-lillestrom": 1.04,
+  "monter-orring": 1.02,
+  "monter-ostre-aker": 1.05,
+  "monter-lier": 1.0,
+  "byggmax-abildso": 0.95,
+  "byggmax-drammen": 0.96,
+  "bauhaus-liertoppen": 0.93,
+  "bauhaus-vestby": 0.94,
+};
+
+/** Products a given store does NOT stock (realistic gaps → tests fulfillability + variety). */
+const OMISSIONS: Record<string, string[]> = {
+  "byggmax-abildso": ["isolasjon-glava-150"],
+  "bauhaus-vestby": ["isolasjon-glava-150"],
+  "maxbo-asker": ["osb-12mm"],
+  "monter-orring": ["sement-25kg"],
+  "maxbo-vaekero": ["osb-12mm"],
+};
+
+/** Deterministic ±12% wobble from a string hash, so cheapest store differs per product. */
+function wobble(storeId: string, productId: string): number {
+  const s = `${storeId}:${productId}`;
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return 0.88 + ((h % 1000) / 1000) * 0.24; // 0.88 .. 1.12
 }
 
-export const SEED_OFFERS: Offer[] = [
-  // lumber-48x98-impr (per metre)
-  offer("maxbo-lier", "lumber-48x98-impr", 39.9),
-  offer("monter-drammen", "lumber-48x98-impr", 42.5),
-  offer("optimera-asker", "lumber-48x98-impr", 37.9), // cheapest lumber
-  offer("byggmax-drammen", "lumber-48x98-impr", 41.0),
-  offer("bauhaus-ski", "lumber-48x98-impr", 44.9),
+/** Round to the nearest 0,50 kr for believable shelf prices. */
+function shelf(kroner: number): number {
+  return Math.round(kroner * 2) / 2;
+}
 
-  // gips-13mm-standard (per board)
-  offer("maxbo-lier", "gips-13mm-standard", 129.0),
-  offer("monter-drammen", "gips-13mm-standard", 119.0), // cheapest gips
-  offer("optimera-asker", "gips-13mm-standard", 135.0),
-  offer("byggmax-drammen", "gips-13mm-standard", 124.0),
-  // (Bauhaus does not stock this one — tests fulfillability)
+function build(): Offer[] {
+  const out: Offer[] = [];
+  for (const store of SEED_STORES) {
+    const factor = STORE_FACTOR[store.id] ?? 1;
+    const omitted = new Set(OMISSIONS[store.id] ?? []);
+    for (const product of SEED_PRODUCTS) {
+      if (omitted.has(product.id)) continue;
+      const base = BASE_KR[product.id]!;
+      const price = shelf(base * factor * wobble(store.id, product.id));
+      out.push({
+        storeId: store.id,
+        productId: product.id,
+        priceOre: kr(price),
+        inclMva: true,
+        observedAt: OBSERVED,
+      });
+    }
+  }
+  return out;
+}
 
-  // isolasjon-glava-150 (per pack)
-  offer("maxbo-lier", "isolasjon-glava-150", 899.0),
-  offer("monter-drammen", "isolasjon-glava-150", 949.0),
-  offer("optimera-asker", "isolasjon-glava-150", 879.0), // cheapest isolasjon
-  offer("byggmax-drammen", "isolasjon-glava-150", 915.0),
-
-  // sement-25kg (per sack)
-  offer("maxbo-lier", "sement-25kg", 109.0),
-  offer("monter-drammen", "sement-25kg", 99.0), // cheapest sement
-  offer("byggmax-drammen", "sement-25kg", 105.0),
-  offer("bauhaus-ski", "sement-25kg", 95.0), // actually cheapest, but far away
-
-  // osb-12mm (per board)
-  offer("maxbo-lier", "osb-12mm", 179.0),
-  offer("byggmax-drammen", "osb-12mm", 169.0), // cheapest osb
-  offer("optimera-asker", "osb-12mm", 185.0),
-];
+export const SEED_OFFERS: Offer[] = build();

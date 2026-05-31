@@ -96,7 +96,7 @@ describe("optimize", () => {
     expect(res.plans).toHaveLength(0);
   });
 
-  it("a tight radius excludes far stores (Bauhaus Ski)", async () => {
+  it("a tight radius excludes far stores (Bauhaus Vestby)", async () => {
     const res = await optimize(
       baseReq({ maxRadiusMeters: 15_000 }),
       SEED_STORES,
@@ -104,7 +104,8 @@ describe("optimize", () => {
       deps,
     );
     const allStores = new Set(res.plans.flatMap((p) => p.storeIds));
-    expect(allStores.has("bauhaus-ski")).toBe(false);
+    expect(allStores.has("bauhaus-vestby")).toBe(false);
+    expect(allStores.has("monter-lillestrom")).toBe(false);
   });
 
   it("raising the value of time shifts ranking toward fewer/closer stores", async () => {

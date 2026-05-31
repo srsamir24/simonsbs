@@ -9,7 +9,12 @@ export default function Page() {
     unit: p.unit,
     category: p.category,
   }));
-  const stores = SEED_STORES.map((s) => ({ id: s.id, name: s.name, chain: s.chain }));
+  const stores = SEED_STORES.map((s) => ({
+    id: s.id,
+    name: s.name,
+    chain: s.chain,
+    address: s.address ?? "",
+  }));
 
   return (
     <div className="shell">
@@ -32,7 +37,7 @@ export default function Page() {
           nærheten når det faktisk lønner seg.
         </p>
         <div className="specstamp">
-          REGION · <b>OSLO / DRAMMEN</b>
+          REGION · <b>OSLO / VIKEN</b>
           <br />
           SONE · <b>NO1</b>
           <br />
